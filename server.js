@@ -29,11 +29,15 @@ async function getRank(keyword, domain) {
   for (let link of links) {
     const href = link.getAttribute("href");
 
-    if (href && href.includes("http")) {
-      if (href.includes(domain)) {
+    // ✅ FIXED PART (important)
+    if (href && href.startsWith("/url?q=")) {
+      const cleanLink = href.split("/url?q=")[1]?.split("&")[0];
+
+      if (cleanLink && cleanLink.includes(domain)) {
         rank = position;
         break;
       }
+
       position++;
     }
   }
@@ -48,7 +52,7 @@ async function processKeywords(keywords, domain) {
     try {
       const rank = await getRank(keyword, domain);
       results.push({ keyword, rank });
-      await delay(1000); // avoid blocking
+      await delay(1000);
     } catch {
       results.push({ keyword, rank: -1 });
     }
