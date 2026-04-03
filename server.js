@@ -1,90 +1,64 @@
 const http = require("http");
-const https = require("https");
-
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-  "Mozilla/5.0 (X11; Linux x86_64)"
-];
-
-function getRandomUserAgent() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
+const fetch = require("node-fetch");
+const { JSDOM } = require("jsdom");
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function fetchHTML(url) {
-  return new Promise((resolve, reject) => {
-    https.get(
-      url,
-      {
-        headers: {
-          "User-Agent": getRandomUserAgent()
-        }
-      },
-      (res) => {
-        let data = "";
-        res.on("data", chunk => data += chunk);
-        res.on("end", () => resolve(data));
-      }
-    ).on("error", reject);
-  });
-}
-
 async function getRank(keyword, domain) {
-  for (let page = 0; page < 30; page += 10) {
-    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&start=${page}`;
-    
-    const html = await fetchHTML(searchUrl);
+  let rank = -1;
 
-    const matches = html.match(/<a href="\/url\?q=(.*?)&/g) || [];
-    let rank = page + 1;
+  const url = `https://www.google.com/search?q=${encodeURIComponent(keyword)}`;
 
-    for (const m of matches) {
-      const link = m.replace('<a href="/url?q=', '').split("&")[0];
-
-      if (!link.startsWith("http")) continue;
-
-      if (link.includes(domain)) {
-        return rank;
-      }
-
-      rank++;
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0"
     }
+  });
 
-    await delay(1000);
+  const html = await response.text();
+
+  const dom = new JSDOM(html);
+  const document = dom.window.document;
+
+  const links = document.querySelectorAll("a");
+
+  let position = 1;
+
+  for (let link of links) {
+    const href = link.getAttribute("href");
+
+    if (href && href.includes("http")) {
+      if (href.includes(domain)) {
+        rank = position;
+        break;
+      }
+      position++;
+    }
   }
 
-  return -1;
+  return rank;
 }
 
 async function processKeywords(keywords, domain) {
-  const results = new Array(keywords.length);
-  const concurrency = 5;
-  let index = 0;
+  const results = [];
 
-  async function worker() {
-    while (index < keywords.length) {
-      const current = index++;
-      const keyword = keywords[current];
-
-      try {
-        const rank = await getRank(keyword, domain);
-        results[current] = { keyword, rank };
-      } catch {
-        results[current] = { keyword, rank: -1 };
-      }
+  for (let keyword of keywords) {
+    try {
+      const rank = await getRank(keyword, domain);
+      results.push({ keyword, rank });
+      await delay(1000); // avoid blocking
+    } catch {
+      results.push({ keyword, rank: -1 });
     }
   }
 
-  await Promise.all(Array.from({ length: concurrency }, worker));
   return results;
 }
 
 const server = http.createServer((req, res) => {
-  if (req.method === "POST" && req.url === "/rank") {
+  if (req.method === "POST" && req.url.startsWith("/rank")) {
     let body = "";
 
     req.on("data", chunk => body += chunk);
@@ -111,6 +85,9 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ error: "Invalid request" }));
       }
     });
+  } else if (req.method === "GET" && req.url === "/") {
+    res.writeHead(200);
+    res.end("API is running 🚀");
   } else {
     res.writeHead(404);
     res.end("Not Found");
