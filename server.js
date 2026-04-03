@@ -62,7 +62,8 @@ async function processKeywords(keywords, domain) {
 }
 
 const server = http.createServer((req, res) => {
-  if (req.method === "POST" && req.url === "/rank") {
+  // if (req.method === "POST" && req.url === "/rank") {
+    if (req.method === "POST" && req.url.startsWith("/rank")) {
     let body = "";
 
     req.on("data", chunk => body += chunk);
