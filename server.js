@@ -7,63 +7,85 @@ function delay(ms) {
 }
 
 async function getRank(keyword, domain) {
-  let rank = -1;
+  try {
+    const url = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&num=20`;
 
-  const url = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&num=20`;
-
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-      "Accept-Language": "en-US,en;q=0.9"
-    }
-  });
-
-  const html = await response.text();
-
-  const dom = new JSDOM(html);
-  const document = dom.window.document;
-
-  const links = document.querySelectorAll("a");
-
-  let position = 1;
-
-  for (let link of links) {
-    const href = link.getAttribute("href");
-
-    if (href && href.startsWith("/url?q=")) {
-      const clean = href.split("/url?q=")[1]?.split("&")[0];
-
-      if (clean && clean.includes(domain)) {
-        rank = position;
-        break;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept-Language": "en-US,en;q=0.9"
       }
+    });
 
-      position++;
+    const html = await response.text();
+
+    if (!html || html.includes("captcha")) {
+      return {
+        keyword,
+        rank: -1,
+        status: "Blocked by Google"
+      };
     }
-  }
 
-  return rank;
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+
+    let position = 1;
+    let found = false;
+
+    const links = document.querySelectorAll("a");
+
+    for (let link of links) {
+      const href = link.getAttribute("href");
+
+      if (href && href.startsWith("/url?q=")) {
+        const clean = href.split("/url?q=")[1]?.split("&")[0];
+
+        if (clean) {
+          if (clean.includes(domain)) {
+            found = true;
+            return {
+              keyword,
+              rank: position,
+              status: "Found"
+            };
+          }
+          position++;
+        }
+      }
+    }
+
+    return {
+      keyword,
+      rank: -1,
+      status: "Not Found in top results"
+    };
+
+  } catch (error) {
+    return {
+      keyword,
+      rank: -1,
+      status: "Error",
+      message: error.message
+    };
+  }
 }
 
 async function processKeywords(keywords, domain) {
   const results = [];
 
   for (let keyword of keywords) {
-    try {
-      const rank = await getRank(keyword, domain);
-      results.push({ keyword, rank });
-      await delay(1500);
-    } catch {
-      results.push({ keyword, rank: -1 });
-    }
+    const result = await getRank(keyword, domain);
+    results.push(result);
+    await delay(2000);
   }
 
   return results;
 }
 
 const server = http.createServer((req, res) => {
-  // if (req.method === "POST" && req.url === "/rank") {
-    if (req.method === "POST" && req.url.startsWith("/rank")) {
+
+  if (req.method === "POST" && req.url === "/rank") {
     let body = "";
 
     req.on("data", chunk => body += chunk);
@@ -85,13 +107,19 @@ const server = http.createServer((req, res) => {
         });
 
         res.end(JSON.stringify(results));
-      } catch {
+
+      } catch (error) {
         res.writeHead(400);
         res.end(JSON.stringify({ error: "Invalid JSON" }));
       }
     });
 
     return;
+  }
+
+  if (req.method === "GET" && req.url === "/") {
+    res.writeHead(200);
+    return res.end("API running");
   }
 
   res.writeHead(404);
