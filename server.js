@@ -9,11 +9,12 @@ function delay(ms) {
 async function getRank(keyword, domain) {
   let rank = -1;
 
-  const url = `https://www.google.com/search?q=${encodeURIComponent(keyword)}`;
+  const url = `https://www.google.com/search?q=${encodeURIComponent(keyword)}&num=20`;
 
   const response = await fetch(url, {
     headers: {
-      "User-Agent": "Mozilla/5.0"
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      "Accept-Language": "en-US,en;q=0.9"
     }
   });
 
@@ -29,11 +30,10 @@ async function getRank(keyword, domain) {
   for (let link of links) {
     const href = link.getAttribute("href");
 
-    // ✅ FIXED PART (important)
     if (href && href.startsWith("/url?q=")) {
-      const cleanLink = href.split("/url?q=")[1]?.split("&")[0];
+      const clean = href.split("/url?q=")[1]?.split("&")[0];
 
-      if (cleanLink && cleanLink.includes(domain)) {
+      if (clean && clean.includes(domain)) {
         rank = position;
         break;
       }
@@ -52,7 +52,7 @@ async function processKeywords(keywords, domain) {
     try {
       const rank = await getRank(keyword, domain);
       results.push({ keyword, rank });
-      await delay(1000);
+      await delay(1500);
     } catch {
       results.push({ keyword, rank: -1 });
     }
@@ -62,7 +62,7 @@ async function processKeywords(keywords, domain) {
 }
 
 const server = http.createServer((req, res) => {
-  if (req.method === "POST" && req.url.startsWith("/rank")) {
+  if (req.method === "POST" && req.url === "/rank") {
     let body = "";
 
     req.on("data", chunk => body += chunk);
@@ -73,7 +73,7 @@ const server = http.createServer((req, res) => {
 
         if (!keywords || !domain) {
           res.writeHead(400);
-          return res.end(JSON.stringify({ error: "Missing keywords or domain" }));
+          return res.end(JSON.stringify({ error: "Missing data" }));
         }
 
         const results = await processKeywords(keywords, domain);
@@ -86,16 +86,15 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify(results));
       } catch {
         res.writeHead(400);
-        res.end(JSON.stringify({ error: "Invalid request" }));
+        res.end(JSON.stringify({ error: "Invalid JSON" }));
       }
     });
-  } else if (req.method === "GET" && req.url === "/") {
-    res.writeHead(200);
-    res.end("API is running 🚀");
-  } else {
-    res.writeHead(404);
-    res.end("Not Found");
+
+    return;
   }
+
+  res.writeHead(404);
+  res.end("Not Found");
 });
 
 const PORT = process.env.PORT || 8000;
